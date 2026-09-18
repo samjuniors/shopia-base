@@ -4,6 +4,7 @@ import SettingsPanel from "./SettingsPanel";
 import SophiaCanvas from "./SophiaCanvas";
 import { useSophiaStore } from "@/store/sophiaStore";
 import { VOICE_STATES } from "@/lib/sophia/types";
+import { deepgramVoice } from "@/lib/sophia/useDeepgramAgent";
 
 export default function SophiaApp() {
   useEffect(() => {
@@ -31,15 +32,14 @@ export default function SophiaApp() {
         return;
       }
 
-      // Space bar to pause or activate Sophia (unless typing in a text field)
+      // Space bar: toggle Deepgram voice session
       if (e.code === "Space" || e.key === " " || e.key === "Spacebar") {
         if (!isTextInput) {
           e.preventDefault();
-          // Unfocus any active button or slider so space doesn't re-trigger it
           if (document.activeElement instanceof HTMLElement) {
             document.activeElement.blur();
           }
-          store.interact();
+          void deepgramVoice.toggle();
           return;
         }
       }
@@ -52,9 +52,10 @@ export default function SophiaApp() {
         return;
       }
 
+      // M key: toggle Deepgram voice session (same as mic button)
       if (e.key === "m" || e.key === "M") {
         e.preventDefault();
-        store.toggleMic();
+        void deepgramVoice.toggle();
         return;
       }
 
@@ -66,7 +67,7 @@ export default function SophiaApp() {
 
       if (e.key === "p" || e.key === "P") {
         e.preventDefault();
-        store.interact();
+        void deepgramVoice.toggle();
         return;
       }
 
@@ -100,3 +101,4 @@ export default function SophiaApp() {
     </div>
   );
 }
+

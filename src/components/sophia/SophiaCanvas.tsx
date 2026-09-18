@@ -16,6 +16,7 @@ import SophiaShape from "./SophiaShape";
 import AmbientParticles from "./AmbientParticles";
 import LightRings from "./LightRings";
 import { useSophiaStore } from "@/store/sophiaStore";
+import { deepgramVoice } from "@/lib/sophia/useDeepgramAgent";
 
 function makeHaloTexture() {
   const c = document.createElement("canvas");
@@ -186,7 +187,7 @@ export default function SophiaCanvas() {
     const dt = Date.now() - time;
     // If pointer moved less than 8px and click was under 450ms, treat as clean click
     if (Math.hypot(dx, dy) < 8 && dt < 450) {
-      useSophiaStore.getState().interact();
+      void deepgramVoice.toggle();
     }
   };
 

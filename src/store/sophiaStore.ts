@@ -22,6 +22,12 @@ const PRESET_KEY = "sophia-custom-presets-v2";
 const OVERRIDE_KEY = "sophia-preset-overrides-v3";
 const ASSIGN_KEY = "sophia-state-assignments-v2";
 
+let voiceSessionToggleHandler: (() => void) | null = null;
+
+export function registerVoiceSessionToggle(handler: () => void) {
+  voiceSessionToggleHandler = handler;
+}
+
 export type StudioSection = "shape" | "motion" | "look" | "presence";
 
 export const SECTION_KEYS: Record<StudioSection, (keyof SophiaSettings)[]> = {
@@ -226,6 +232,8 @@ export interface SophiaStore extends SophiaSettings {
   unsaved: boolean;
   renamingId: string | null;
   previousActiveState: VoiceState;
+  deepgramConnected: boolean;
+  userTranscript: string;
 
   patch: (p: Partial<SophiaStore>) => void;
   setVoiceState: (s: VoiceState, caption?: string) => void;
@@ -320,6 +328,8 @@ export const useSophiaStore = create<SophiaStore>((set, get) => {
     unsaved: false,
     renamingId: null,
     previousActiveState: "listening",
+    deepgramConnected: false,
+    userTranscript: "",
 
     allPresets,
     resolvePreset,
@@ -394,6 +404,13 @@ export const useSophiaStore = create<SophiaStore>((set, get) => {
       const now = Date.now();
       if (now - lastInteractTime < 220) return;
       lastInteractTime = now;
+
+      // If a real voice agent session handler is registered, delegate to it
+      if (voiceSessionToggleHandler) {
+        voiceSessionToggleHandler();
+        return;
+      }
+
       clearUtteranceTimers();
       const s = get().voiceState;
 

@@ -1,7 +1,8 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, useCallback, type FormEvent } from "react";
 import { cn } from "@/lib/utils";
 import { useSophiaStore } from "@/store/sophiaStore";
 import { STATE_META } from "@/lib/sophia/captions";
+import { useDeepgramAgent } from "@/lib/sophia/useDeepgramAgent";
 import type { RuntimeStatus } from "@/lib/sophia/types";
 
 function GearIcon() {
@@ -41,10 +42,19 @@ function useClock() {
   return now;
 }
 
+/**
+ * Local-only microphone visualizer.
+ * Only activates when Deepgram is NOT connected (the Deepgram hook feeds
+ * audioLevel itself when a session is active).
+ */
 function useMicrophone() {
   const micEnabled = useSophiaStore((s) => s.micEnabled);
+  const deepgramConnected = useSophiaStore((s) => s.deepgramConnected);
 
   useEffect(() => {
+    // Skip local mic when Deepgram is handling audio
+    if (deepgramConnected) return;
+
     if (!micEnabled) {
       useSophiaStore.getState().patch({ audioLevel: 0 });
       return;
@@ -92,23 +102,29 @@ function useMicrophone() {
       ctx?.close();
       useSophiaStore.getState().patch({ audioLevel: 0 });
     };
-  }, [micEnabled]);
+  }, [micEnabled, deepgramConnected]);
 }
 
 export default function Hud() {
   useMicrophone();
   const now = useClock();
+  const { toggle } = useDeepgramAgent();
   const voiceState = useSophiaStore((s) => s.voiceState);
   const settingsOpen = useSophiaStore((s) => s.settingsOpen);
   const typeOpen = useSophiaStore((s) => s.typeOpen);
   const infoOpen = useSophiaStore((s) => s.infoOpen);
   const micEnabled = useSophiaStore((s) => s.micEnabled);
+  const deepgramConnected = useSophiaStore((s) => s.deepgramConnected);
   const runtimeStatus = useSophiaStore((s) => s.runtimeStatus);
   const spokenCaption = useSophiaStore((s) => s.spokenCaption);
   const patch = useSophiaStore((s) => s.patch);
-  const toggleMic = useSophiaStore((s) => s.toggleMic);
   const submitUtterance = useSophiaStore((s) => s.submitUtterance);
   const [draft, setDraft] = useState("");
+
+  /** Toggle the Deepgram voice session on/off. */
+  const handleMicToggle = useCallback(() => {
+    void toggle();
+  }, [toggle]);
 
   const meta = STATE_META[voiceState];
   const time = now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
@@ -165,11 +181,14 @@ export default function Hud() {
             </div>
           </div>
           <button
-            className={cn("icon-btn mic z-20", (micEnabled || voiceState === "listening") && "active")}
-            aria-label="Toggle microphone"
+            className={cn(
+              "icon-btn mic z-20",
+              (micEnabled || deepgramConnected || voiceState === "listening") && "active",
+            )}
+            aria-label={deepgramConnected ? "Disconnect voice" : "Start voice"}
             onClick={(e) => {
               e.stopPropagation();
-              toggleMic();
+              handleMicToggle();
             }}
           >
             <MicIcon />
@@ -206,17 +225,19 @@ export default function Hud() {
             className="pointer-events-auto flex items-center gap-2 text-[12px] text-white/50 hover:text-white transition"
             onClick={(e) => {
               e.stopPropagation();
-              useSophiaStore.getState().interact();
+              void toggle();
             }}
             title="Press Space or click to pause/activate"
           >
             <span className="kbd">Space</span>
             <span className="hidden sm:inline">
-              {voiceState === "paused"
-                ? "Resume"
-                : ["listening", "working", "speaking", "needs_you", "blocked"].includes(voiceState)
-                  ? "Pause"
-                  : "Activate"}
+              {deepgramConnected
+                ? "Disconnect"
+                : voiceState === "paused"
+                  ? "Resume"
+                  : ["listening", "working", "speaking", "needs_you", "blocked"].includes(voiceState)
+                    ? "Pause"
+                    : "Activate"}
             </span>
           </button>
 
@@ -273,7 +294,7 @@ export default function Hud() {
           >
             <p className="text-white/90 font-medium">Controls & Shortcuts</p>
             <p className="mt-2">
-              <strong className="text-white">Click</strong> Sophia or press <strong className="text-white">Space</strong> to pause, resume, or activate.
+              <strong className="text-white">Click</strong> Sophia or press <strong className="text-white">Space</strong> to start / stop voice.
             </p>
             <p className="mt-1.5">
               <strong className="text-white">S</strong> opens studio. <strong className="text-white">M</strong> toggles mic. <strong className="text-white">K</strong> types text.
@@ -281,7 +302,7 @@ export default function Hud() {
             <p className="mt-1.5">
               <strong className="text-white">1–8</strong> switch states (1: Idle, 2: Listening, 3: Working, 4: Speaking, 5: Needs You, 6: Paused, 7: Blocked, 8: Completed).
             </p>
-            <p className="mt-2 text-white/35">No extra controls around her. She is the interface.</p>
+            <p className="mt-2 text-white/35">Sophia listens, thinks, and speaks. She is the interface.</p>
           </div>
         )}
       </footer>

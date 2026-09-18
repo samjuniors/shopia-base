@@ -267,13 +267,13 @@ export default function SophiaShape() {
 
     let pulse = 0.016;
     if (s.float) pulse += Math.sin(t * 2.05) * 0.012;
-    if (s.voiceState === "listening") pulse += audio * 0.09;
-    if (s.voiceState === "speaking") pulse += speechEnvelope(t) * 0.07;
+    if (s.voiceState === "listening") pulse += audio * 0.12;
+    if (s.voiceState === "speaking") pulse += Math.max(audio * 0.14, speechEnvelope(t) * 0.07);
 
     let glow = a.glow;
     if (s.animateGlow) glow *= 0.84 + 0.16 * Math.sin(t * 2.05);
-    glow *= 1 + audio * 0.55;
-    if (s.voiceState === "speaking") glow *= 1 + speechEnvelope(t) * 0.22;
+    glow *= 1 + audio * 0.65;
+    if (s.voiceState === "speaking") glow *= 1 + Math.max(audio * 0.5, speechEnvelope(t) * 0.22);
 
     const noiseAmp = s.noise * (s.animateNoise ? 0.7 + 0.3 * Math.sin(t * 0.9) : 1);
 
