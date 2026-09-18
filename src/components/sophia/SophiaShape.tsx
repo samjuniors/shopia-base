@@ -17,7 +17,7 @@ import {
   type Mesh,
   type WebGLProgramParametersWithUniforms,
 } from "three";
-import { applySophiaOnBeforeCompile, GLOW_FRAGMENT, GLOW_VERTEX } from "@/shaders/sophia";
+import { applySophiaOnBeforeCompile, createSophiaUniforms, GLOW_FRAGMENT, GLOW_VERTEX } from "@/shaders/sophia";
 import { useSophiaStore } from "@/store/sophiaStore";
 import { AXIS_VEC, DEG, type ShapeType } from "@/lib/sophia/types";
 
@@ -68,6 +68,12 @@ const tempColA = new Color();
 const tempColB = new Color();
 const tempColC = new Color();
 const tempColD = new Color();
+const tempColE = new Color();
+const tempColF = new Color();
+
+function damp(cur: number, target: number, k: number) {
+  return cur + (target - cur) * k;
+}
 
 export default function SophiaShape() {
   const group = useRef<Group>(null);
@@ -75,11 +81,12 @@ export default function SophiaShape() {
   const attentionDotGroup = useRef<Group>(null);
   const attentionDotMesh = useRef<Mesh>(null);
   const attentionGlowMesh = useRef<Mesh>(null);
+  const warningGroup = useRef<Group>(null);
+  const warningMesh = useRef<Mesh>(null);
+  const warningGlowMesh = useRef<Mesh>(null);
   const shaderRef = useRef<WebGLProgramParametersWithUniforms | null>(null);
 
   const shapeType = useSophiaStore((s) => s.shapeType);
-  const majorRadius = useSophiaStore((s) => s.majorRadius);
-  const tubeRadius = useSophiaStore((s) => s.tubeRadius);
   const p = useSophiaStore((s) => s.p);
   const q = useSophiaStore((s) => s.q);
   const showTube = useSophiaStore((s) => s.showTube ?? true);
@@ -91,6 +98,7 @@ export default function SophiaShape() {
     asymmetry: 0,
     aperture: 0,
     breathing: 0.035,
+    knotness: 0,
     stretch: 1,
     compress: 0,
     twist: 0,
@@ -102,18 +110,36 @@ export default function SophiaShape() {
     orientZ: 0,
     speed: 0.55,
     glow: 1.4,
-    colorA: new Color("#2E7BFF"),
-    colorB: new Color("#9B4DFF"),
-    colorC: new Color("#FF4DAD"),
-    colorD: new Color("#FF5A3C"),
+    organic: 0.13,
+    noise: 0.035,
+    noiseScale: 1.6,
+    pivotX: 0,
+    pivotY: 0,
+    pivotZ: 0,
+    majorRadius: 0.6,
+    tubeRadius: 0.17,
+    stutter: 0,
+    streakOn: 1,
+    streakSpeed: 0.22,
+    streakIntensity: 0.62,
+    highlightAmount: 0.42,
+    colorSpeed: 0.28,
+    audioResponse: 0.85,
+    colorA: new Color("#00E5FF"),
+    colorB: new Color("#2E7BFF"),
+    colorC: new Color("#8B5CF6"),
+    colorD: new Color("#FF2BD6"),
+    colorE: new Color("#FF7AB6"),
+    colorF: new Color("#FFB020"),
     attentionDotOpacity: 0,
+    warningOpacity: 0,
   });
 
   const geometry = useMemo(() => {
-    const g = createGeometry(shapeType, majorRadius, tubeRadius, p, q);
+    const g = createGeometry(shapeType, 0.6, 0.17, p, q);
     g.computeVertexNormals();
     return g;
-  }, [shapeType, majorRadius, tubeRadius, p, q]);
+  }, [shapeType, p, q]);
 
   const material = useMemo(() => {
     const mat = new MeshPhysicalMaterial({
@@ -141,47 +167,13 @@ export default function SophiaShape() {
       applySophiaOnBeforeCompile(shader);
       shaderRef.current = shader;
     };
-    mat.customProgramCacheKey = () => "sophia-presence-v3";
+    mat.customProgramCacheKey = () => "sophia-atlas-v1";
     return mat;
   }, []);
 
   const glowMaterial = useMemo(() => {
     return new ShaderMaterial({
-      uniforms: {
-        uTime: { value: 0 },
-        uBend: { value: new Vector3(0, 0, 0) },
-        uTaper: { value: 0 },
-        uTaperAxis: { value: new Vector3(1, 0, 0) },
-        uTwist: { value: 0 },
-        uTwistAxis: { value: new Vector3(0, 1, 0) },
-        uNoise: { value: 0.03 },
-        uNoiseScale: { value: 1.6 },
-        uRevolve: { value: 0 },
-        uOrganic: { value: 0.1 },
-        uPulse: { value: 0 },
-        uSpeed: { value: 0.55 },
-        uPivot: { value: new Vector3(0, 0, 0) },
-        uStretch: { value: 1 },
-        uStretchAxis: { value: new Vector3(1, 0, 0) },
-        uCompress: { value: 0 },
-        uWave: { value: 0 },
-        uWaveAxis: { value: new Vector3(1, 0, 0) },
-        uWaveSpeed: { value: 0.8 },
-        uAsymmetry: { value: 0 },
-        uAperture: { value: 0 },
-        uBreathing: { value: 0 },
-        uGlow: { value: 1.4 },
-        uColorA: { value: new Color("#2E7BFF") },
-        uColorB: { value: new Color("#9B4DFF") },
-        uColorC: { value: new Color("#FF4DAD") },
-        uColorD: { value: new Color("#FF5A3C") },
-        uColorSpeed: { value: 0.32 },
-        uStreakOn: { value: 1 },
-        uStreakSpeed: { value: 0.28 },
-        uStreakIntensity: { value: 0.7 },
-        uHighlight: { value: 0.5 },
-        uFlowDir: { value: 1 },
-      },
+      uniforms: createSophiaUniforms(),
       vertexShader: GLOW_VERTEX,
       fragmentShader: GLOW_FRAGMENT,
       transparent: true,
@@ -208,7 +200,8 @@ export default function SophiaShape() {
     const a = animState.current;
 
     // Fluid continuous morphing between states and presets
-    const k = Math.min(1, delta * 5.2);
+    const transDuration = s.transitionDuration ?? 0.55;
+    const k = Math.min(1, delta * (1 / (transDuration * 0.2)));
 
     const targetBendX = s.bendX ?? 0;
     const targetBendY = s.bendY ?? 0;
@@ -220,6 +213,7 @@ export default function SophiaShape() {
     a.asymmetry += ((s.asymmetry ?? 0) - a.asymmetry) * k;
     a.aperture += ((s.aperture ?? 0) - a.aperture) * k;
     a.breathing += ((s.breathing ?? 0.035) - a.breathing) * k;
+    a.knotness += ((s.knotness ?? 0) - a.knotness) * k;
     a.stretch += ((s.stretch ?? 1) - a.stretch) * k;
     a.compress += ((s.compress ?? 0) - a.compress) * k;
     a.twist += ((s.twist ?? 0) - a.twist) * k;
@@ -231,18 +225,39 @@ export default function SophiaShape() {
     a.orientZ += ((s.orientZ ?? 0) - a.orientZ) * k;
     a.speed += ((s.speed ?? 0.55) - a.speed) * k;
     a.glow += ((s.glow ?? 1.4) - a.glow) * k;
+    a.organic += ((s.organic ?? 0.13) - a.organic) * k;
+    a.noise += ((s.noise ?? 0.035) - a.noise) * k;
+    a.noiseScale += ((s.noiseScale ?? 1.6) - a.noiseScale) * k;
+    a.pivotX += ((s.pivotX ?? 0) - a.pivotX) * k;
+    a.pivotY += ((s.pivotY ?? 0) - a.pivotY) * k;
+    a.pivotZ += ((s.pivotZ ?? 0) - a.pivotZ) * k;
+    a.majorRadius += ((s.majorRadius ?? 0.6) - a.majorRadius) * k;
+    a.tubeRadius += ((s.tubeRadius ?? 0.17) - a.tubeRadius) * k;
+    a.stutter += ((s.stutter ?? 0) - a.stutter) * k;
+    a.streakOn += ((s.streakOn ?? 1) - a.streakOn) * k;
+    a.streakSpeed += ((s.streakSpeed ?? 0.22) - a.streakSpeed) * k;
+    a.streakIntensity += ((s.streakIntensity ?? 0.62) - a.streakIntensity) * k;
+    a.highlightAmount += ((s.highlightAmount ?? 0.42) - a.highlightAmount) * k;
+    a.colorSpeed += ((s.colorSpeed ?? 0.28) - a.colorSpeed) * k;
+    a.audioResponse += ((s.audioResponse ?? 0.85) - a.audioResponse) * k;
 
     tempColA.set(s.colorA);
     tempColB.set(s.colorB);
     tempColC.set(s.colorC);
     tempColD.set(s.colorD);
+    tempColE.set(s.colorE);
+    tempColF.set(s.colorF);
     a.colorA.lerp(tempColA, k);
     a.colorB.lerp(tempColB, k);
     a.colorC.lerp(tempColC, k);
     a.colorD.lerp(tempColD, k);
+    a.colorE.lerp(tempColE, k);
+    a.colorF.lerp(tempColF, k);
 
     const targetDot = s.attentionDot ? 1 : 0;
     a.attentionDotOpacity += (targetDot - a.attentionDotOpacity) * k;
+    const targetWarn = s.warningAccent ? 1 : 0;
+    a.warningOpacity += (targetWarn - a.warningOpacity) * k;ty += (targetDot - a.attentionDotOpacity) * k;
 
     const t = clock.elapsedTime * a.speed;
 
@@ -401,6 +416,14 @@ export default function SophiaShape() {
           (attentionGlowMesh.current.material as MeshBasicMaterial).color.copy(a.colorD);
           (attentionGlowMesh.current.material as MeshBasicMaterial).opacity = 0.5 * a.attentionDotOpacity;
         }
+        if (warningMesh.current) {
+          (warningMesh.current.material as MeshBasicMaterial).color.copy(a.colorF);
+          (warningMesh.current.material as MeshBasicMaterial).opacity = a.warningOpacity;
+        }
+        if (warningGlowMesh.current) {
+          (warningGlowMesh.current.material as MeshBasicMaterial).color.copy(a.colorF);
+          (warningGlowMesh.current.material as MeshBasicMaterial).opacity = 0.4 * a.warningOpacity;
+        }
       }
     }
   });
@@ -451,6 +474,22 @@ export default function SophiaShape() {
             <meshBasicMaterial
               transparent
               opacity={0.45}
+              blending={AdditiveBlending}
+              depthWrite={false}
+              toneMapped={false}
+            />
+          </mesh>
+        </group>
+        <group ref={warningGroup} visible={false}>
+          <mesh ref={warningMesh}>
+            <torusGeometry args={[0.2, 0.02, 16, 64]} />
+            <meshBasicMaterial transparent opacity={1} toneMapped={false} />
+          </mesh>
+          <mesh ref={warningGlowMesh} scale={1.4}>
+            <torusGeometry args={[0.2, 0.02, 16, 64]} />
+            <meshBasicMaterial
+              transparent
+              opacity={0.4}
               blending={AdditiveBlending}
               depthWrite={false}
               toneMapped={false}

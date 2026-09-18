@@ -19,7 +19,7 @@ import {
 import { replyTo, STATE_META } from "@/lib/sophia/captions";
 
 const PRESET_KEY = "sophia-custom-presets-v2";
-const OVERRIDE_KEY = "sophia-preset-overrides-v2";
+const OVERRIDE_KEY = "sophia-preset-overrides-v3";
 const ASSIGN_KEY = "sophia-state-assignments-v2";
 
 export type StudioSection = "shape" | "motion" | "look" | "presence";
@@ -36,7 +36,9 @@ export const SECTION_KEYS: Record<StudioSection, (keyof SophiaSettings)[]> = {
     "asymmetry",
     "aperture",
     "breathing",
+    "knotness",
     "attentionDot",
+    "warningAccent",
     "pivotX",
     "pivotY",
     "pivotZ",
@@ -91,12 +93,15 @@ export const SECTION_KEYS: Record<StudioSection, (keyof SophiaSettings)[]> = {
     "animPivotY",
     "animPivotZ",
     "float",
+    "stutter",
   ],
   look: [
     "colorA",
     "colorB",
     "colorC",
     "colorD",
+    "colorE",
+    "colorF",
     "glow",
     "iridescence",
     "fresnelPower",
@@ -139,7 +144,7 @@ export const SECTION_KEYS: Record<StudioSection, (keyof SophiaSettings)[]> = {
     "ringDirection",
     "ringGlow",
   ],
-  presence: ["speed"],
+  presence: ["speed", "audioResponse", "transitionDuration"],
 };
 
 function canUseStorage() {
@@ -373,10 +378,11 @@ export const useSophiaStore = create<SophiaStore>((set, get) => {
         micEnabled: voiceState === "listening" ? get().micEnabled : false,
       });
 
-      // Transient state 08 - Completed automatically returns to Idle
+      // Transient state 08 — brief convergence, then morph back to Idle
       if (voiceState === "completed") {
         const gen = utteranceGen;
-        later(gen, 1800, () => {
+        const hold = Math.round(Math.max(1.35, (settings.transitionDuration ?? 0.55) * 2.8) * 1000);
+        later(gen, hold, () => {
           if (get().voiceState === "completed") {
             get().setVoiceState("idle");
           }

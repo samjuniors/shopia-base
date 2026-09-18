@@ -29,7 +29,9 @@ export interface SophiaSettings {
   asymmetry: number;
   aperture: number;
   breathing: number;
+  knotness: number;
   attentionDot: boolean;
+  warningAccent: boolean;
 
   pivotX: number;
   pivotY: number;
@@ -85,11 +87,14 @@ export interface SophiaSettings {
   animPivotY: number;
   animPivotZ: number;
   float: boolean;
+  stutter: number;
 
   colorA: string;
   colorB: string;
   colorC: string;
   colorD: string;
+  colorE: string;
+  colorF: string;
   glow: number;
   iridescence: number;
   fresnelPower: number;
@@ -135,6 +140,9 @@ export interface SophiaSettings {
   ringAxis: Axis;
   ringDirection: number;
   ringGlow: number;
+
+  audioResponse: number;
+  transitionDuration: number;
 }
 
 export interface SavedPreset {
