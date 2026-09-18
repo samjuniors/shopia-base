@@ -6,9 +6,12 @@ import { useLayoutEffect, useMemo, useRef } from "react";
 import {
   AdditiveBlending,
   CanvasTexture,
+  Color,
   ACESFilmicToneMapping,
   PMREMGenerator,
   SRGBColorSpace,
+  type Mesh,
+  type MeshBasicMaterial,
   type Sprite,
 } from "three";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
@@ -57,6 +60,62 @@ function HaloSprite() {
         toneMapped={false}
       />
     </sprite>
+  );
+}
+
+function ExpandingCompletionRing() {
+  const meshRef = useRef<Mesh>(null);
+  const triggerTimeRef = useRef<number>(-1);
+  const prevCompletedRef = useRef(false);
+  const tex = useMemo(() => makeHaloTexture(), []);
+
+  useFrame(({ clock }) => {
+    const s = useSophiaStore.getState();
+    const isCompleted = s.voiceState === "completed";
+
+    if (isCompleted && !prevCompletedRef.current) {
+      triggerTimeRef.current = clock.elapsedTime;
+    }
+    prevCompletedRef.current = isCompleted;
+
+    if (!meshRef.current) return;
+
+    if (triggerTimeRef.current < 0) {
+      meshRef.current.visible = false;
+      return;
+    }
+
+    const elapsed = clock.elapsedTime - triggerTimeRef.current;
+    const duration = 1.35;
+
+    if (elapsed > duration) {
+      meshRef.current.visible = false;
+      return;
+    }
+
+    meshRef.current.visible = true;
+    const progress = elapsed / duration;
+    const ease = 1 - Math.pow(1 - progress, 3);
+    const scale = 1.2 + ease * 3.4;
+    meshRef.current.scale.set(scale, scale, 1);
+
+    const mat = meshRef.current.material as MeshBasicMaterial;
+    mat.opacity = (1 - progress) * 0.72;
+    mat.color.set(s.colorB).lerp(new Color("#ffffff"), 0.4);
+  });
+
+  return (
+    <mesh ref={meshRef} position={[0, 0.08, -0.2]} visible={false}>
+      <planeGeometry args={[2.6, 2.6]} />
+      <meshBasicMaterial
+        map={tex}
+        transparent
+        opacity={0}
+        blending={AdditiveBlending}
+        depthWrite={false}
+        toneMapped={false}
+      />
+    </mesh>
   );
 }
 
@@ -162,6 +221,7 @@ function Stage() {
   return (
     <group position={[0, stage.y, 0]} scale={stage.scale}>
       <HaloSprite />
+      <ExpandingCompletionRing />
       <SophiaShape />
       <AmbientParticles />
       <LightRings />

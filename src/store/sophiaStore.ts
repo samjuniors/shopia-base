@@ -120,6 +120,7 @@ export const SECTION_KEYS: Record<StudioSection, (keyof SophiaSettings)[]> = {
     "colorSpeed",
     "colorFlowDir",
     "streakOn",
+    "segmentsOn",
     "streakSpeed",
     "streakIntensity",
     "highlightAmount",

@@ -47,6 +47,25 @@ export default function PresenceTab() {
             style={{ width: `${Math.min(100, s.audioLevel * 140)}%` }}
           />
         </div>
+        <Slider
+          label="Voice responsiveness"
+          value={s.audioResponse}
+          min={0}
+          max={2.5}
+          step={0.05}
+          defaultValue={0.85}
+          onChange={(v) => patch({ audioResponse: v })}
+        />
+        <Slider
+          label="Transition duration"
+          value={s.transitionDuration}
+          min={0.15}
+          max={1.5}
+          step={0.05}
+          unit="s"
+          defaultValue={0.55}
+          onChange={(v) => patch({ transitionDuration: v })}
+        />
       </Section>
 
       <Section title="Runtime">

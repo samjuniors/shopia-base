@@ -107,6 +107,7 @@ export interface SophiaSettings {
   colorSpeed: number;
   colorFlowDir: number;
   streakOn: boolean;
+  segmentsOn?: boolean;
   streakSpeed: number;
   streakIntensity: number;
   highlightAmount: number;

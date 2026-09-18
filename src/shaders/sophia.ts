@@ -28,6 +28,8 @@ uniform float uKnot;
 uniform float uStutter;
 uniform float uMajorRadius;
 uniform float uTubeRadius;
+uniform float uWarning;
+uniform float uAudio;
 
 varying vec3 vSophiaPos;
 
@@ -178,17 +180,34 @@ vec3 sophiaDisplace(vec3 p) {
 
   if (abs(uAperture) > 0.0001) {
     if (uAperture > 0.0) {
+      // Gentle receptive opening for listening state
       float open = clamp(uAperture, 0.0, 1.0);
-      float collapse = smoothstep(-0.12, 1.05, -cos(theta));
-      float s = mix(1.0, 0.10, collapse * open);
+      float collapse = smoothstep(-0.25, 1.0, -cos(theta));
+      float s = mix(1.0, 0.55, collapse * open * 0.7);
       p.xy *= s;
-      p.x += open * 0.28 * (1.0 - collapse * 0.35);
-      p.z += collapse * open * 0.06;
+      p.x += open * 0.16 * (1.0 - collapse * 0.3);
+      p.z += collapse * open * 0.04;
     } else {
       float pinch = pow(abs(cos(theta)), 1.2);
-      p.xy *= 1.0 + uAperture * pinch * 0.9;
-      p.z *= 1.0 - (-uAperture) * 0.15 * pinch;
+      p.xy *= 1.0 + uAperture * pinch * 0.6;
+      p.z *= 1.0 - (-uAperture) * 0.12 * pinch;
     }
+  }
+
+  // Localized pinch for Blocked state (rest of the ring stays calm)
+  if (uWarning > 0.001) {
+    float pinchZone = exp(-4.5 * (1.0 - cos(theta)));
+    float pinchMag = pinchZone * clamp(uWarning, 0.0, 1.0) * 0.32;
+    p.xy *= 1.0 - pinchMag * 0.55;
+    p.z *= 1.0 - pinchMag * 0.45;
+  }
+
+  // Fluid small ripples for Speaking state modulated by real audio
+  if (uAudio > 0.005 || (uWave > 0.01 && uSpeed > 0.6)) {
+    float rippleFreq = 5.0;
+    float ripple = sin(theta * rippleFreq + uTime * uWaveSpeed * 2.4) * sin(theta * 2.5 - uTime * 1.2);
+    float rippleAmp = (uWave * 0.025 + uAudio * 0.045);
+    p += normalize(p + 0.0001) * ripple * rippleAmp;
   }
 
   if (abs(uBreathing) > 0.0001) {
@@ -256,6 +275,7 @@ uniform float uStreakIntensity;
 uniform float uHighlight;
 uniform float uFlowDir;
 uniform float uWarning;
+uniform float uSegmentsOn;
 varying vec3 vSophiaPos;
 
 vec3 atlasRamp(float g) {
@@ -279,8 +299,24 @@ vec3 sophiaGradient(vec3 pos) {
     float gx = clamp(pos.x * 0.46 + 0.5, 0.0, 1.0);
     grad = atlasRamp(gx);
   }
+
+  // Working state: 2-3 luminous traveling segments chasing around the ring with trailing multicolor fades
+  if (uSegmentsOn > 0.001) {
+    float segSpeed = max(0.4, uStreakSpeed) * 1.85;
+    float segPhase = flow * 3.0 + uTime * segSpeed * uFlowDir;
+    float segFrac = fract(segPhase);
+    float head = smoothstep(0.72, 0.98, segFrac);
+    float trail = pow(segFrac, 3.4) * smoothstep(0.05, 0.35, segFrac);
+    float segInt = (head * 1.9 + trail * 1.15) * uStreakIntensity * uSegmentsOn;
+    vec3 headColor = atlasRamp(g + 0.22) * 2.2;
+    vec3 trailColor = atlasRamp(g - 0.14) * 1.45;
+    vec3 segColor = mix(trailColor, headColor, head);
+    grad = mix(grad, segColor, clamp(segInt * 0.78, 0.0, 1.0));
+    grad += segColor * (segInt * uHighlight * 1.1);
+  }
+
   float streakAmt = clamp(uStreakOn, 0.0, 1.0);
-  if (streakAmt > 0.001) {
+  if (streakAmt > 0.001 && uSegmentsOn < 0.5) {
     float angle = (flow + uTime * uStreakSpeed * uFlowDir * 0.22) * 6.28318530718;
     float s1 = pow(smoothstep(0.32, 0.98, cos(angle)), 2.35);
     float s2 = pow(smoothstep(0.48, 0.98, cos(angle * 1.65 + 1.15)), 3.1);
@@ -291,10 +327,22 @@ vec3 sophiaGradient(vec3 pos) {
     grad += c1 * (s1 * uHighlight * 0.9 * streakAmt);
     grad += c2 * (s2 * uHighlight * 0.45 * streakAmt);
   }
+
+  // Listening state: brighter, thicker light gathering on receptive side
+  float receptiveSide = max(0.0, cos(theta + 0.25));
+  if (receptiveSide > 0.01) {
+    float gather = pow(receptiveSide, 2.2);
+    vec3 gatherColor = atlasRamp(g + 0.12) * 1.35;
+    grad = mix(grad, gatherColor, gather * 0.35);
+    grad += gatherColor * (gather * 0.28 * (1.0 + uAudio * 1.2));
+  }
+
+  // Blocked state: localized amber/red color bleed and bloom at the pinch point
   if (uWarning > 0.001) {
-    float pinch = pow(abs(cos(theta)), 3.0);
-    vec3 warn = mix(uColorF, vec3(1.0, 0.32, 0.26), 0.4);
-    grad = mix(grad, warn * 1.28, pinch * uWarning * 0.72);
+    float pinchZone = exp(-4.2 * (1.0 - cos(theta)));
+    vec3 warn = mix(vec3(1.0, 0.55, 0.06), vec3(1.0, 0.16, 0.10), 0.58);
+    grad = mix(grad, warn * 1.85, pinchZone * uWarning * 0.95);
+    grad += warn * (pinchZone * uWarning * 1.5);
   }
   return grad;
 }
@@ -362,6 +410,7 @@ export function createSophiaUniforms() {
     uHighlight: { value: 0.5 },
     uFlowDir: { value: 1 },
     uWarning: { value: 0 },
+    uSegmentsOn: { value: 0 },
   };
 }
 
@@ -410,6 +459,7 @@ uniform float uStreakIntensity;
 uniform float uHighlight;
 uniform float uFlowDir;
 uniform float uWarning;
+uniform float uSegmentsOn;
 varying vec3 vN;
 varying vec3 vW;
 varying vec3 vSophiaPos;
@@ -432,8 +482,24 @@ void main() {
   float flow = theta * 0.15915494309;
   float g = fract(flow + uTime * uColorSpeed * uFlowDir * 0.18 + 0.5);
   vec3 grad = atlasRamp(g);
+
+  // Traveling segments for working state
+  if (uSegmentsOn > 0.001) {
+    float segSpeed = max(0.4, uStreakSpeed) * 1.85;
+    float segPhase = flow * 3.0 + uTime * segSpeed * uFlowDir;
+    float segFrac = fract(segPhase);
+    float head = smoothstep(0.72, 0.98, segFrac);
+    float trail = pow(segFrac, 3.4) * smoothstep(0.05, 0.35, segFrac);
+    float segInt = (head * 1.8 + trail * 1.1) * uStreakIntensity * uSegmentsOn;
+    vec3 headColor = atlasRamp(g + 0.22) * 2.0;
+    vec3 trailColor = atlasRamp(g - 0.14) * 1.35;
+    vec3 segColor = mix(trailColor, headColor, head);
+    grad = mix(grad, segColor, clamp(segInt * 0.75, 0.0, 1.0));
+    grad += segColor * (segInt * uHighlight);
+  }
+
   float streakAmt = clamp(uStreakOn, 0.0, 1.0);
-  if (streakAmt > 0.001) {
+  if (streakAmt > 0.001 && uSegmentsOn < 0.5) {
     float angle = (flow + uTime * uStreakSpeed * uFlowDir * 0.22) * 6.28318530718;
     float s1 = pow(smoothstep(0.32, 0.98, cos(angle)), 2.35);
     float s2 = pow(smoothstep(0.48, 0.98, cos(angle * 1.65 + 1.15)), 3.1);
@@ -443,9 +509,12 @@ void main() {
     grad = mix(grad, c2 * 1.3, s2 * uStreakIntensity * 0.65 * streakAmt);
     grad += c1 * (s1 * uHighlight * streakAmt);
   }
+
   if (uWarning > 0.001) {
-    float pinch = pow(abs(cos(theta)), 3.0);
-    grad = mix(grad, mix(uColorF, vec3(1.0, 0.32, 0.26), 0.4) * 1.2, pinch * uWarning * 0.65);
+    float pinchZone = exp(-4.2 * (1.0 - cos(theta)));
+    vec3 warn = mix(vec3(1.0, 0.55, 0.06), vec3(1.0, 0.16, 0.10), 0.58);
+    grad = mix(grad, warn * 1.85, pinchZone * uWarning * 0.95);
+    grad += warn * (pinchZone * uWarning * 1.5);
   }
   float a = fres * 0.55 * uGlow;
   gl_FragColor = vec4(grad * (0.8 + fres), a);

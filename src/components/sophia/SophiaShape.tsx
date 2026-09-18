@@ -177,6 +177,13 @@ export default function SophiaShape() {
         uColorD: { value: new Color("#FF5A3C") },
         uColorSpeed: { value: 0.32 },
         uStreakOn: { value: 1 },
+        uMajorRadius: { value: 0.6 },
+        uTubeRadius: { value: 0.17 },
+        uKnot: { value: 0 },
+        uStutter: { value: 0 },
+        uWarning: { value: 0 },
+        uAudio: { value: 0 },
+        uSegmentsOn: { value: 0 },
         uStreakSpeed: { value: 0.28 },
         uStreakIntensity: { value: 0.7 },
         uHighlight: { value: 0.5 },
@@ -232,10 +239,19 @@ export default function SophiaShape() {
     a.speed += ((s.speed ?? 0.55) - a.speed) * k;
     a.glow += ((s.glow ?? 1.4) - a.glow) * k;
 
-    tempColA.set(s.colorA);
-    tempColB.set(s.colorB);
-    tempColC.set(s.colorC);
-    tempColD.set(s.colorD);
+    // Paused state: freeze motion and lerp colors to cool muted presence over ~300ms
+    const isPaused = s.voiceState === "paused";
+    if (isPaused) {
+      tempColA.set(s.colorA).lerp(new Color("#3a4e6b"), 0.55).multiplyScalar(0.72);
+      tempColB.set(s.colorB).lerp(new Color("#354366"), 0.55).multiplyScalar(0.72);
+      tempColC.set(s.colorC).lerp(new Color("#423a63"), 0.55).multiplyScalar(0.72);
+      tempColD.set(s.colorD).lerp(new Color("#30405a"), 0.55).multiplyScalar(0.72);
+    } else {
+      tempColA.set(s.colorA);
+      tempColB.set(s.colorB);
+      tempColC.set(s.colorC);
+      tempColD.set(s.colorD);
+    }
     a.colorA.lerp(tempColA, k);
     a.colorB.lerp(tempColB, k);
     a.colorC.lerp(tempColC, k);
@@ -244,12 +260,13 @@ export default function SophiaShape() {
     const targetDot = s.attentionDot ? 1 : 0;
     a.attentionDotOpacity += (targetDot - a.attentionDotOpacity) * k;
 
-    const t = clock.elapsedTime * a.speed;
+    // Progression time stops when paused
+    const t = (isPaused ? 0 : clock.elapsedTime) * a.speed;
 
     let bx = a.bendX * DEG;
     let by = a.bendY * DEG;
     let bz = a.bendZ * DEG;
-    if (s.animateBend) {
+    if (s.animateBend && !isPaused) {
       const wave = Math.sin(t * 0.55);
       bx = wave * Math.abs(a.bendX) * DEG;
       by = wave * Math.abs(a.bendY) * DEG;
@@ -257,29 +274,55 @@ export default function SophiaShape() {
     }
 
     let taper = a.taper;
-    if (s.animateTaper) taper = Math.sin(t * 0.62) * a.taper;
+    if (s.animateTaper && !isPaused) taper = Math.sin(t * 0.62) * a.taper;
 
     let twist = a.twist * DEG;
-    if (s.animateTwist) twist = Math.sin(t * 0.48) * Math.abs(a.twist) * DEG;
+    if (s.animateTwist && !isPaused) twist = Math.sin(t * 0.48) * Math.abs(a.twist) * DEG;
 
     const revolve = s.revolve * t;
-    const waveSpeed = s.animateWave ? a.waveSpeed : 0;
+    const waveSpeed = s.animateWave && !isPaused ? a.waveSpeed : 0;
 
     let pulse = 0.016;
-    if (s.float) pulse += Math.sin(t * 2.05) * 0.012;
-    if (s.voiceState === "listening") pulse += audio * 0.12;
-    if (s.voiceState === "speaking") pulse += Math.max(audio * 0.14, speechEnvelope(t) * 0.07);
+    let highlightBoost = 0;
+    let heartbeatBeat = 0;
+
+    if (s.voiceState === "needs_you") {
+      // Clear double heartbeat: lub-dub -> rest
+      const period = 1.35;
+      const tau = (clock.elapsedTime % period) / period;
+      if (tau < 0.18) {
+        const ph = tau / 0.18;
+        heartbeatBeat = Math.sin(ph * Math.PI) * Math.exp(-ph * 1.6);
+      } else if (tau >= 0.24 && tau < 0.44) {
+        const ph = (tau - 0.24) / 0.20;
+        heartbeatBeat = Math.sin(ph * Math.PI) * 0.75 * Math.exp(-ph * 1.8);
+      }
+      pulse += heartbeatBeat * 0.075;
+      highlightBoost += heartbeatBeat * 0.55;
+    } else {
+      if (s.float && !isPaused) pulse += Math.sin(t * 2.05) * 0.012;
+      if (s.voiceState === "listening") pulse += audio * 0.12;
+      if (s.voiceState === "speaking") pulse += Math.max(audio * 0.14, speechEnvelope(t) * 0.07);
+      if (s.voiceState === "completed") pulse -= 0.035; // Brief convergence
+    }
 
     let glow = a.glow;
-    if (s.animateGlow) glow *= 0.84 + 0.16 * Math.sin(t * 2.05);
-    glow *= 1 + audio * 0.65;
-    if (s.voiceState === "speaking") glow *= 1 + Math.max(audio * 0.5, speechEnvelope(t) * 0.22);
+    if (s.voiceState === "needs_you") {
+      glow *= 1.0 + heartbeatBeat * 0.65;
+    } else if (s.voiceState === "idle") {
+      // Soft glow breathing between 60% and 100%
+      glow *= 0.78 + 0.22 * Math.sin(clock.elapsedTime * 1.25);
+    } else {
+      if (s.animateGlow && !isPaused) glow *= 0.84 + 0.16 * Math.sin(t * 2.05);
+      glow *= 1 + audio * 0.65;
+      if (s.voiceState === "speaking") glow *= 1 + Math.max(audio * 0.5, speechEnvelope(t) * 0.22);
+    }
 
-    const noiseAmp = s.noise * (s.animateNoise ? 0.7 + 0.3 * Math.sin(t * 0.9) : 1);
+    const noiseAmp = isPaused ? 0.005 : s.noise * (s.animateNoise ? 0.7 + 0.3 * Math.sin(t * 0.9) : 1);
 
     const apply = (u: Record<string, { value: unknown }>) => {
       if (!u) return;
-      if (u.uTime) u.uTime.value = clock.elapsedTime;
+      if (u.uTime) u.uTime.value = isPaused ? 0 : clock.elapsedTime;
       if (u.uBend) (u.uBend.value as Vector3 | undefined)?.set(bx, by, bz);
       if (u.uTaper) u.uTaper.value = taper;
       if (u.uTwist) u.uTwist.value = twist;
@@ -288,10 +331,10 @@ export default function SophiaShape() {
       if (u.uRevolve) u.uRevolve.value = revolve;
       if (u.uOrganic) u.uOrganic.value = s.organic;
       if (u.uPulse) u.uPulse.value = pulse;
-      if (u.uSpeed) u.uSpeed.value = a.speed;
+      if (u.uSpeed) u.uSpeed.value = isPaused ? 0 : a.speed;
       if (u.uGlow) u.uGlow.value = glow;
-      if (u.uColorSpeed) u.uColorSpeed.value = s.colorSpeed;
-      if (u.uAnimateColors) u.uAnimateColors.value = s.animateColors ? 1 : 0;
+      if (u.uColorSpeed) u.uColorSpeed.value = isPaused ? 0 : s.colorSpeed;
+      if (u.uAnimateColors) u.uAnimateColors.value = (!isPaused && s.animateColors) ? 1 : 0;
       if (u.uFresnelBoost) u.uFresnelBoost.value = s.fresnelPower * 0.42;
       if (u.uAudio) u.uAudio.value = audio;
       if (u.uStretch) u.uStretch.value = a.stretch;
@@ -300,11 +343,13 @@ export default function SophiaShape() {
       if (u.uWaveSpeed) u.uWaveSpeed.value = waveSpeed;
       if (u.uAsymmetry) u.uAsymmetry.value = a.asymmetry;
       if (u.uAperture) u.uAperture.value = a.aperture;
-      if (u.uBreathing) u.uBreathing.value = a.breathing;
-      if (u.uStreakOn) u.uStreakOn.value = s.streakOn ? 1 : 0;
+      if (u.uBreathing) u.uBreathing.value = isPaused ? 0 : a.breathing;
+      if (u.uStreakOn) u.uStreakOn.value = (!isPaused && s.streakOn) ? 1 : 0;
+      if (u.uSegmentsOn) u.uSegmentsOn.value = (!isPaused && (s.segmentsOn || s.voiceState === "working")) ? 1 : 0;
+      if (u.uWarning) u.uWarning.value = s.warningAccent ? 1 : 0;
       if (u.uStreakSpeed) u.uStreakSpeed.value = s.streakSpeed;
       if (u.uStreakIntensity) u.uStreakIntensity.value = s.streakIntensity;
-      if (u.uHighlight) u.uHighlight.value = s.highlightAmount;
+      if (u.uHighlight) u.uHighlight.value = s.highlightAmount + highlightBoost;
       if (u.uFlowDir) u.uFlowDir.value = s.colorFlowDir;
       const at = AXIS_VEC[s.taperAxis];
       const aw = AXIS_VEC[s.twistAxis];

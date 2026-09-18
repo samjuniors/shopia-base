@@ -23,8 +23,9 @@ export default function LookTab() {
         </Row>
       </Section>
 
-      <Section title="Light streak">
+      <Section title="Light streaks & Segments">
         <Toggle label="Traveling highlight" value={s.streakOn} onChange={(v) => patch({ streakOn: v })} />
+        <Toggle label="Chasing segments (Working)" value={s.segmentsOn ?? false} onChange={(v) => patch({ segmentsOn: v })} />
         <div className="flex gap-1.5">
           {[
             { label: "Slow", value: 0.16 },
