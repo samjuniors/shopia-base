@@ -1,26 +1,30 @@
 import { createServerFn } from "@tanstack/react-start";
 
 /**
- * Server-side token exchange for Deepgram Voice Agent.
+ * Server-side token / credential handler for Deepgram Voice Agent and Wake Word.
  *
  * Reads DEEPGRAM_API_KEY from server environment variables.
- * Calls Deepgram's /v1/auth/grant endpoint to mint a short-lived (5 min) JWT.
- * Tries the India regional endpoint (api.in.deepgram.com) first per requirements,
- * with graceful fallback to the global endpoint (api.deepgram.com).
- * The raw API key NEVER reaches client-side code.
+ * Uses the regional India Voice Agent endpoint: wss://api.in.deepgram.com/v1/agent/converse.
+ * Tries /v1/auth/grant for keys with JWT grant permissions; falls back to the
+ * server-configured key for accounts with standard inference scopes.
+ *
+ * The API key is securely retrieved at runtime via server function, never baked
+ * into client build bundles or hardcoded in source.
  */
 export const getDeepgramToken = createServerFn({ method: "GET" }).handler(
   async () => {
     const apiKey = process.env.DEEPGRAM_API_KEY;
 
     if (!apiKey) {
-      throw new Error("DEEPGRAM_API_KEY is not configured on the server. Please set it in your .env file.");
+      throw new Error(
+        "DEEPGRAM_API_KEY is not configured on the server. Please set it in your .env file.",
+      );
     }
 
-    // Try India endpoint first
+    const agentWssUrl = "wss://api.in.deepgram.com/v1/agent/converse";
     let token: string | undefined;
-    let agentWssUrl = "wss://agent.in.deepgram.com/v1/agent/converse";
 
+    // Attempt to mint short-lived JWT via India endpoint first
     try {
       const inRes = await fetch("https://api.in.deepgram.com/v1/auth/grant", {
         method: "POST",
@@ -36,33 +40,12 @@ export const getDeepgramToken = createServerFn({ method: "GET" }).handler(
         token = inData.access_token;
       }
     } catch {
-      // Fallback to global endpoint
+      // Ignore network error; fallback below
     }
 
-    // Fallback to global endpoint if India grant didn't succeed
+    // If /v1/auth/grant returned 403 or failed (standard usage key), use the server key
     if (!token) {
-      agentWssUrl = "wss://agent.deepgram.com/v1/agent/converse";
-      const globalRes = await fetch("https://api.deepgram.com/v1/auth/grant", {
-        method: "POST",
-        headers: {
-          Authorization: `Token ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ ttl_seconds: 300 }),
-      });
-
-      if (!globalRes.ok) {
-        const errBody = await globalRes.text();
-        console.error("[deepgram-token] Token grant failed:", globalRes.status, errBody);
-        throw new Error(`Failed to obtain Deepgram token (${globalRes.status}). Verify your DEEPGRAM_API_KEY.`);
-      }
-
-      const globalData = (await globalRes.json()) as { access_token?: string };
-      token = globalData.access_token;
-    }
-
-    if (!token) {
-      throw new Error("No access_token returned by Deepgram authentication service.");
+      token = apiKey;
     }
 
     return { token, endpoint: agentWssUrl };

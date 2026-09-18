@@ -1,7 +1,7 @@
 import type { SeesawMode } from "@/lib/sophia/types";
 import { useSophiaStore } from "@/store/sophiaStore";
 import { cn } from "@/lib/utils";
-import { AccordionGroup, AxisPicker, DirPicker, Row, Section, SectionActionBar, Slider, Toggle } from "./controls";
+import { AccordionGroup, DirPicker, Row, Section, SectionActionBar, Slider, Toggle } from "./controls";
 
 export const ORIENTATION_VIEWS = [
   { id: "front", label: "Front", rx: 0, ry: 0, rz: 0 },

@@ -8,6 +8,8 @@ import { deepgramVoice } from "@/lib/sophia/useDeepgramAgent";
 
 export default function SophiaApp() {
   useEffect(() => {
+    void deepgramVoice.init();
+
     const onKey = (e: KeyboardEvent) => {
       const store = useSophiaStore.getState();
       const target = e.target as HTMLElement | null;

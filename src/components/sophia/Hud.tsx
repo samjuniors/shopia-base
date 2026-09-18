@@ -42,71 +42,7 @@ function useClock() {
   return now;
 }
 
-/**
- * Local-only microphone visualizer.
- * Only activates when Deepgram is NOT connected (the Deepgram hook feeds
- * audioLevel itself when a session is active).
- */
-function useMicrophone() {
-  const micEnabled = useSophiaStore((s) => s.micEnabled);
-  const deepgramConnected = useSophiaStore((s) => s.deepgramConnected);
-
-  useEffect(() => {
-    // Skip local mic when Deepgram is handling audio
-    if (deepgramConnected) return;
-
-    if (!micEnabled) {
-      useSophiaStore.getState().patch({ audioLevel: 0 });
-      return;
-    }
-    let raf = 0;
-    let stream: MediaStream | null = null;
-    let ctx: AudioContext | null = null;
-    let cancelled = false;
-
-    (async () => {
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        if (cancelled) {
-          stream.getTracks().forEach((t) => t.stop());
-          return;
-        }
-        ctx = new AudioContext();
-        const src = ctx.createMediaStreamSource(stream);
-        const analyser = ctx.createAnalyser();
-        analyser.fftSize = 256;
-        src.connect(analyser);
-        const data = new Uint8Array(analyser.frequencyBinCount);
-        const loop = () => {
-          analyser.getByteFrequencyData(data);
-          let sum = 0;
-          for (let i = 0; i < data.length; i++) sum += data[i];
-          useSophiaStore.getState().patch({ audioLevel: sum / data.length / 255 });
-          raf = requestAnimationFrame(loop);
-        };
-        loop();
-      } catch {
-        useSophiaStore.getState().patch({
-          micEnabled: false,
-          micError: true,
-          audioLevel: 0,
-          runtimeStatus: "degraded",
-        });
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-      cancelAnimationFrame(raf);
-      stream?.getTracks().forEach((t) => t.stop());
-      ctx?.close();
-      useSophiaStore.getState().patch({ audioLevel: 0 });
-    };
-  }, [micEnabled, deepgramConnected]);
-}
-
 export default function Hud() {
-  useMicrophone();
   const now = useClock();
   const { toggle } = useDeepgramAgent();
   const voiceState = useSophiaStore((s) => s.voiceState);
